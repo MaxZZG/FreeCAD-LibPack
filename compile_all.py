@@ -454,7 +454,7 @@ class Compiler:
                 print(e.stderr.decode("utf-8"))
             exit(1)
 
-    def _build_ifcopenshell_debug(self):
+    def build_ifcopenshell_debug(self):
         print("  build ifcopenshell debug using pip: ")
         path_to_python = self.python_exe()
         call_build_ifcopenshell_args = [path_to_python, "-m", "pip", "install", ".", "--no-binary :all:", "--config-settings=cmake_args="-DCMAKE_BUILD_TYPE=Debug -DUSE_DEBUG_PYTHON=ON -DBUILD_SHARED_LIBS=OFF""]
@@ -471,6 +471,11 @@ class Compiler:
                 print(e.stderr.decode("utf-8"))
             exit(1)
 
+    def build_pillow_debug(self):
+        print("  build pillow debug using pip: ")
+        path_to_python = self.python_exe()
+        
+        
     def build_qt(self, options: dict):
         """Doesn't really "build" Qt, just copies the pre-compiled libraries from the configured path"""
         qt_dir = options["install-directory"]
