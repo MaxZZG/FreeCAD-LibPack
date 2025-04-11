@@ -202,9 +202,14 @@ class Compiler:
             # All build methods are named using "build_XXX" where XXX is the name of the package in the config file
             os.chdir(item["name"])
             build_function_name = "build_" + item["name"]
+            build_debug_function_name = "build_" + item["name"] + "_debug"
             if hasattr(self, build_function_name):
                 print(f"Building {item['name']}")
                 build_function = getattr(self, build_function_name)
+                build_function(item)
+            elif hasattr(self, build_debug_function_name):
+                print(f"Building {item['name']} (debug)")
+                build_function = getattr(self, build_debug_function_name)
                 build_function(item)
             else:
                 print(
@@ -212,6 +217,7 @@ class Compiler:
                     "did you forget to add one when adding a dependency?"
                 )
                 exit(2)
+            
             os.chdir(self.base_dir)
 
     def build_nonexistent(self, _=None):
@@ -347,6 +353,12 @@ class Compiler:
         if "requirements" in args:
             self._install_python_requirements(args["requirements"])
 
+        if "debug_need_build_requirements" in args:  
+            if self.mode == BuildMode.DEBUG:
+                self._build_python_requirements(args["debug_need_build_requirements"])
+            else:
+                self._install_python_requirements(args["debug_need_build_requirements"])
+
     def get_python_version(self, exe: str = None) -> str:
         if exe is None:
             path_to_python = self.python_exe()
@@ -399,6 +411,61 @@ class Compiler:
             )
         except subprocess.CalledProcessError as e:
             print(f"ERROR: Failed to pip install requirements")
+            print(e.output.decode("utf-8"))
+            if e.stderr:
+                print(e.stderr.decode("utf-8"))
+            exit(1)
+
+    def _build_python_requirements(self, requirements):
+        # build numpy
+        self._build_numpy(requirements)
+        # build 
+
+    def _build_numpy_debug(self, requirements):
+        print("  build numpy debug using pip: ")
+
+        # find numpy
+        pattern = r'"numpy==([\d.]+)"'
+        for s in requirements:
+            match = re.search(pattern, s)
+
+        if not match:
+            print("ERROR: Failed to find numpy")
+            exit(1)
+
+        path_to_python = self.python_exe()
+        call_install_dep_args = [path_to_python, "-m", "pip", "install", "cython", "meson-python"]
+        call_build_numpy_args = [path_to_python, "-m", "pip", "install", "--no-binary :all:", "--config-settings="setup-args=-Dcpu-baseline=min"", "--config-settings="setup-args=-Dcpu-dispatch=none"", "--config-settings="setup-args=-Dbuildtype=debug"", "--no-build-isolation", match.group()]
+        try:
+            subprocess.run(
+                call_install_dep_args,
+                check=True,
+                capture_output=True,
+            )
+            subprocess.run(
+                call_build_numpy_args,
+                check=True,
+                capture_output=True,
+            )
+        except subprocess.CalledProcessError as e:
+            print(f"ERROR: Failed to build numpy debug")
+            print(e.output.decode("utf-8"))
+            if e.stderr:
+                print(e.stderr.decode("utf-8"))
+            exit(1)
+
+    def _build_ifcopenshell_debug(self):
+        print("  build ifcopenshell debug using pip: ")
+        path_to_python = self.python_exe()
+        call_build_ifcopenshell_args = [path_to_python, "-m", "pip", "install", ".", "--no-binary :all:", "--config-settings=cmake_args="-DCMAKE_BUILD_TYPE=Debug -DUSE_DEBUG_PYTHON=ON -DBUILD_SHARED_LIBS=OFF""]
+        try:
+            subprocess.run(
+                call_build_ifcopenshell_args,
+                check=True,
+                capture_output=True,
+            )
+        except subprocess.CalledProcessError as e:
+            print(f"ERROR: Failed to build ifcopenshell debug")
             print(e.output.decode("utf-8"))
             if e.stderr:
                 print(e.stderr.decode("utf-8"))

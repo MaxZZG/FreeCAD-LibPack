@@ -15,13 +15,8 @@
                 "configparser==7.1.0",
                 "debugpy==1.8.8",
                 "defusedxml==0.7.1",
-                "ifcopenshell==0.8.0",
                 "ladybug-core==0.43.18",
-                "matplotlib==3.9.2",
-                "numpy==1.26.4",
-                "opencv-python==4.10.0.84",
                 "packaging==24.2",
-                "pillow==11.0.0",
                 "ply==3.11",
                 "pycollada==0.8",
                 "pyNastran==1.4.1",
@@ -30,11 +25,18 @@
                 "PyYAML==6.0.2",
                 "requests==2.32.3",
                 "rpdb2==2.0.0.1.2",
-                "scipy==1.14.1",
                 "sets==0.3.2",
                 "setuptools==75.5.0",
                 "vermin==1.6.0",
                 "wheel==0.45.0"
+            ],
+            "debug_need_build_requirements": [
+                "ifcopenshell==0.8.0",
+                "numpy==1.26.4",
+                "scipy==1.14.1",
+                "matplotlib==3.9.2",
+                "opencv-python==4.10.0.84",
+                "pillow==11.0.0"
             ]
         },
         {
@@ -203,6 +205,12 @@
             "name":"calculix",
             "url":"https://drive.usercontent.google.com/download?id=1Z8Mnx9-tyPdPlRi9kdPkFqZhTVA1uemY&export=download&authuser=0&confirm=t&uuid=1808e0cb-38d9-43ea-beea-619109a11527&at=APZUnTWlTXR23jpMPcF6-LBcbOaN:1720405069050",
             "note":"Difficult to compile with an MSVC toolchain because it is written in Fortran. Direct download link here is from http://calculixforwin.blogspot.com/2015/05/calculix-launcher.html"
+        },
+        {
+            "name":"ifcopenshell",
+            "git-repo":"https://github.com/IfcOpenShell/IfcOpenShell",
+            "git-ref":"0.8.0",
+            "patches":["patches/ifcopenshell-02-add-pyproject-metadata.patch"]
         }
     ]
 }
