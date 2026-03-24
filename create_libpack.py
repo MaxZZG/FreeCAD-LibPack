@@ -49,7 +49,7 @@ except ImportError:
     print("Please pip install diff-match-patch")
     exit(1)
 
-import compile_all
+from compile_all import Compiler, BuildMode, libpack_dir, patch_files
 
 path_to_7zip = "C:\\Program Files\\7-Zip\\7z.exe"
 path_to_bison = "C:\\Program Files\\win-flex-bison\\win_bison.exe"
@@ -90,12 +90,12 @@ def load_config(path: str) -> dict:
             exit(1)
 
 
-def create_libpack_dir(config: dict, mode: compile_all.BuildMode) -> str:
+def create_libpack_dir(config: dict, mode: BuildMode) -> str:
     """Create a new directory for this LibPack compilation, using the version of FreeCAD, the version of
     the LibPack, and whether it's in release or debug mode. Returns the name of the created directory.
     """
 
-    dirname = compile_all.libpack_dir(config, mode)
+    dirname = libpack_dir(config, mode)
     if os.path.exists(dirname):
         backup_name = dirname + "-backup-" + "a"
         while os.path.exists(backup_name):
@@ -115,7 +115,7 @@ def create_libpack_dir(config: dict, mode: compile_all.BuildMode) -> str:
     return dirname
 
 
-def fetch_remote_data(config: dict, skip_existing: bool = False):
+def fetch_remote_data(config: dict, skip_existing: bool = False, verbose: bool = False):
     """Clone the required repos and download the URLs"""
     content = config["content"]
     for item in content:
@@ -127,6 +127,7 @@ def fetch_remote_data(config: dict, skip_existing: bool = False):
                 item["git-repo"],
                 item["git-ref"] if "git-ref" in item else None,
                 item["git-hash"] if "git-hash" in item else None,
+                verbose,
             )
         elif "git-ref" in item or "git-hash" in item:
             print(f"ERROR: found a git ref/hash without a git repo for {item['name']}")
@@ -143,11 +144,11 @@ def fetch_remote_data(config: dict, skip_existing: bool = False):
         if "patches" in item:
             cwd = os.getcwd()
             os.chdir(item["name"])
-            compile_all.patch_files(item["patches"])
+            patch_files(item["patches"])
             os.chdir(cwd)
 
 
-def clone(name: str, url: str, ref: str = None, hash: str = None):
+def clone(name: str, url: str, ref: str = None, hash: str = None, verbose: bool = False):
     """Shallow clones a git repo at the given ref using a system-installed git"""
     try:
         if ref is None:
@@ -160,12 +161,12 @@ def clone(name: str, url: str, ref: str = None, hash: str = None):
         elif hash is None:
             args.extend(["--depth", "1"])
         args.extend(["--recurse-submodules", url, name])
-        subprocess.run(args, capture_output=True, check=True)
+        subprocess.run(args, capture_output=not verbose, check=True)
 
         if hash is not None:
             print(f"  Checking out {hash}")
             os.chdir(name)
-            subprocess.run(["git", "checkout", hash], capture_output=True, check=True)
+            subprocess.run(["git", "checkout", hash], capture_output=not verbose, check=True)
             os.chdir("..")
 
     except subprocess.CalledProcessError as e:
@@ -184,15 +185,15 @@ def download(name: str, url: str):
     filename = parsed_url.path.rsplit("/", 1)[-1]
     with open(os.path.join(name, filename), "wb") as f:
         f.write(request_result.content)
-    decompress(name, filename)
+    decompress(name, filename, verbose)
 
 
-def decompress(name: str, filename: str):
+def decompress(name: str, filename: str, verbose: bool = False):
     original_dir = os.getcwd()
     os.chdir(name)
     if filename.endswith("7z") or filename.endswith("7zip"):
         try:
-            subprocess.run([path_to_7zip, "x", filename], capture_output=True, check=True)
+            subprocess.run([path_to_7zip, "x", filename], capture_output=not verbose, check=True)
         except subprocess.CalledProcessError as e:
             print(f"ERROR: failed to unzip {filename} at from {name} using {path_to_7zip}")
             print(e.output)
@@ -210,7 +211,7 @@ def decompress(name: str, filename: str):
             exit(1)
     else:  # Try to use 7-zip to see if it's something understandable to that program
         try:
-            subprocess.run([path_to_7zip, "x", filename], capture_output=True, check=True)
+            subprocess.run([path_to_7zip, "x", filename], capture_output=not verbose, check=True)
         except subprocess.CalledProcessError as e:
             print("ERROR: failed to unzip {filename} at from {name} using {path_to_7zip}")
             print(e.output)
@@ -218,12 +219,12 @@ def decompress(name: str, filename: str):
     os.chdir(original_dir)
 
 
-def write_manifest(outer_config: dict, mode_used: compile_all.BuildMode):
-    manifest_file = os.path.join(compile_all.libpack_dir(outer_config, mode_used), "manifest.json")
+def write_manifest(outer_config: dict, mode_used: BuildMode):
+    manifest_file = os.path.join(libpack_dir(outer_config, mode_used), "manifest.json")
     with open(manifest_file, "w", encoding="utf-8") as f:
         f.write(json.dumps(outer_config["content"], indent="    "))
     version_file = os.path.join(
-        compile_all.libpack_dir(outer_config, mode_used), "FREECAD_LIBPACK_VERSION"
+        libpack_dir(outer_config, mode_used), "FREECAD_LIBPACK_VERSION"
     )
     with open(version_file, "w", encoding="utf-8") as f:
         f.write(outer_config["LibPack-version"])
@@ -298,6 +299,12 @@ if __name__ == "__main__":
         action="store_true",
         help="I kow what I'm doing, don't ask me any questions",
     )
+    parser.add_argument(
+        "-v",
+        "--verbose",
+        action="store_true",
+        help="Show detailed output from git clone and other commands",
+    )
     parser.add_argument("--7zip", help="Path to 7-zip executable", default=path_to_7zip)
     parser.add_argument("--bison", help="Path to Bison executable", default=path_to_bison)
     parser.add_argument("path-to-final-libpack-dir", nargs="?", default="./")
@@ -310,12 +317,12 @@ if __name__ == "__main__":
     os.makedirs("working", exist_ok=True)
     os.chdir("working")
     mode = (
-        compile_all.BuildMode.DEBUG
+        BuildMode.DEBUG
         if args["mode"].lower() == "debug"
-        else compile_all.BuildMode.RELEASE
+        else BuildMode.RELEASE
     )
     if args["no_skip_existing_clone"]:
-        dirname = compile_all.libpack_dir(config_dict, mode)
+        dirname = libpack_dir(config_dict, mode)
         if not os.path.exists(dirname):
             base = create_libpack_dir(config_dict, mode)
         else:
@@ -323,9 +330,9 @@ if __name__ == "__main__":
     else:
         base = create_libpack_dir(config_dict, mode)
     with prevent_sleep_mode():
-        fetch_remote_data(config_dict, args["no_skip_existing_clone"])
+        fetch_remote_data(config_dict, args["no_skip_existing_clone"], args["verbose"])
 
-        compiler = compile_all.Compiler(
+        compiler = Compiler(
             config_dict,
             bison_path=path_to_bison,
             skip_existing=args["no_skip_existing_build"],
@@ -338,7 +345,7 @@ if __name__ == "__main__":
         compiler.compile_all()
 
         # Final cleanup: delete extraneous files and remove local path references from the cMake files
-        base_path = compile_all.libpack_dir(config_dict, mode)
+        base_path = libpack_dir(config_dict, mode)
         path_cleaner.delete_extraneous_files(base_path)
         path_cleaner.remove_local_path_from_cmake_files(base_path)
         path_cleaner.correct_opencascade_freetype_ref(base_path)
