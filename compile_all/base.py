@@ -120,11 +120,6 @@ class CompilerBase:
                 print(f"Building {item['name']}")
                 build_function = getattr(self, build_function_name)
                 build_function(item)
-                if item["name"].lower() == "python":
-                    # Check these even if we didn't actually have to build Python
-                    self._build_pip()
-                    if "requirements" in item:
-                        self._install_python_requirements(item["requirements"])
             else:
                 print(
                     f"No '{build_function_name}' found in compile_all "

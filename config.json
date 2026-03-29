@@ -34,7 +34,6 @@
                 "lxml==5.4.0",
                 "matplotlib==3.9.2",
                 "nltk==3.9.1",
-                "numpy==2.2.5",
                 "packaging==24.2",
                 "pillow==11.0.0",
                 "ply==3.11",
@@ -66,6 +65,9 @@
                 "watchfiles==1.0.5",
                 "websockets==15.0.1",
                 "wheel==0.45.1"
+            ],
+            "debug_need_build_requirements": [
+                "numpy==2.2.5"
             ]
         },
         {

@@ -13,6 +13,7 @@ import shutil
 import subprocess
 import sys
 import zipfile
+import re
 from typing import List, Optional
 
 from ..core import BuildMode, to_exe
@@ -102,9 +103,14 @@ class PythonBuilder:
             for sub in tools_subs:
                 shutil.copytree(f"Tools\\{sub}", os.path.join(tools_dir, sub), dirs_exist_ok=True)
 
+            python = "python"
+            if self.mode == BuildMode.DEBUG:
+                python += "_d"
+            python += ".exe"
+
             # Figure out what version of Python we just built:
             major, minor = self.get_python_version(
-                os.path.join("PCBuild", path, "python.exe")
+                os.path.join("PCBuild", path, python)
             ).split(".")
 
             # Construct the list of files we expect to exist that need to be placed in the toplevel directory, or in
@@ -137,8 +143,43 @@ class PythonBuilder:
                 os.unlink(target)
             print(f"Copying {pyconfig} to {target}")
             shutil.copyfile(pyconfig, target)
+
+            # we need this to build numpy debug
+            if self.mode == BuildMode.DEBUG:
+                non_debug_lib_name = f"python{major}{minor}.lib"
+                debug_lib_name = f"python{major}{minor}_d.lib"
+                source_lib_path = os.path.join(libs_dir, debug_lib_name)
+                target_lib_path = os.path.join(libs_dir, non_debug_lib_name)
+                
+                if os.path.exists(source_lib_path):
+                    if os.path.exists(target_lib_path) or os.path.islink(target_lib_path):
+                        try:
+                            os.unlink(target_lib_path)
+                        except OSError as e:
+                            print(f"Warning: Could not remove existing {target_lib_path}: {e}")
+                    try:
+                        os.symlink(source_lib_path, target_lib_path, target_is_directory=False)
+                        print(f"Created symlink: {target_lib_path} -> {source_lib_path}")
+                    except OSError as e:
+                        print(f"Warning: Failed to create symlink for {non_debug_lib_name}. Error: {e}")
+                        print("Note: Creating symlinks on Windows requires Administrator privileges.")
+                else:
+                    print(f"Warning: Debug library {source_lib_path} not found, skipping symlink creation.")
         else:
             raise NotImplemented("Non-Windows compilation of Python is not implemented yet")
+
+        # Check these even if we didn't actually have to build Python
+        self._build_pip()
+
+        if "debug_need_build_requirements" in args:  
+            if self.mode == BuildMode.DEBUG:
+                self._build_python_requirements(args["debug_need_build_requirements"])
+            else:
+                self._install_python_requirements(args["debug_need_build_requirements"])
+        
+        if "requirements" in args:
+            self._install_python_requirements(args["requirements"])
+
 
     def get_python_version(self, exe: str = None) -> str:
         if exe is None:
@@ -304,3 +345,106 @@ class PythonBuilder:
             )
             exit(1)
         self._pip_install(options["pip-install"])
+
+    def _build_python_requirements(self, requirements):
+        # Make a directory to store the wheels
+        wheel_dir = os.path.join(self.base_dir, "wheelTmp")
+        # Rebuild anyway
+        if os.path.exists(wheel_dir):
+            shutil.rmtree(wheel_dir)
+
+        os.makedirs(wheel_dir)
+
+        self._build_numpy_debug(requirements, wheel_dir)
+
+    def _remove_all_requirements(self):
+        """Remove all installed Python packages using pip."""
+        path_to_python = self.python_exe()
+        try:
+            # Get list of all installed packages11
+            result = subprocess.run(
+                [path_to_python, "-m", "pip", "freeze"],
+                check=True,
+                capture_output=True,
+                text=True
+            )
+            packages = result.stdout.strip().split('\n')
+            packages = [pkg.split('==')[0] for pkg in packages if pkg and not pkg.startswith('#')]
+            if not packages:
+                print("No packages to remove")
+                return
+
+            print(f"Removing {len(packages)} installed packages...")
+            # Remove each package
+            for package in packages:
+                try:
+                    subprocess.run(
+                        [path_to_python, "-m", "pip", "uninstall", "--yes", package],
+                        check=True,
+                        capture_output=True
+                    )
+                    print(f"  Removed {package}")
+                except subprocess.CalledProcessError as e:
+                    print(f"  Warning: Failed to remove {package}")
+                    if e.stderr:
+                        print(f" Error: {e.stderr.decode('utf-8')}")
+                    continue  
+            print("All packages removal completed")
+        except subprocess.CalledProcessError as e:
+            print("ERROR: Failed to get list of installed packages")
+            print(e.stderr.decode("utf-8") if e.stderr else e.stdout.decode("utf-8"))
+            exit(1)
+
+    def _build_numpy_debug(self, requirements, wheel_dir):
+        print("  build numpy debug using pip: ")
+
+        pattern = r'numpy==([\d.]+)'
+        for s in requirements:
+            match = re.search(pattern, s)
+
+        if not match:
+            print("ERROR: Failed to find numpy")
+            exit(1)
+
+        path_to_python = self.python_exe()
+        call_install_dep_args = [path_to_python, "-m", "pip", "install", "cython", "meson-python", "wheel", "setuptools"]
+        call_build_numpy_args = [
+                                self.init_script,
+                                "&", 
+                                path_to_python, 
+                                "-m", "pip", "wheel",
+                                "--no-build-isolation",
+                                "--no-binary=:all:",
+                                "--no-cache-dir",
+                                "--no-deps",
+                                "-wwheelTmp",
+                                "--config-settings=setup-args=-Dcpu-baseline=min", 
+                                "--config-settings=setup-args=-Dcpu-dispatch=none", 
+                                "--config-settings=setup-args=-Dbuildtype=debug", 
+                                match.group()
+                                ]
+        try:
+            subprocess.run(
+                args=call_install_dep_args,
+                check=True,
+                capture_output=True,
+            )
+            subprocess.run(
+                args=call_build_numpy_args,
+                check=True,
+                capture_output=True,
+            )
+        except subprocess.CalledProcessError as e:
+            print(f"ERROR: Failed to build numpy debug")
+            print(e.output.decode("utf-8"))
+            if e.stderr:
+                print(e.stderr.decode("utf-8"))
+            exit(1)
+
+        numpyWheelPath = os.path.join(os.getcwd(), "wheelTmp");
+        for file in pathlib.Path(numpyWheelPath).iterdir():
+            if file.is_file():
+                shutil.copy(file, wheel_dir)
+        
+        self._remove_all_requirements();
+
