@@ -356,6 +356,7 @@ class PythonBuilder:
         os.makedirs(wheel_dir)
 
         self._build_numpy_debug(requirements, wheel_dir)
+        self._build_scipy_debug(requirements, wheel_dir)
 
     def _remove_all_requirements(self):
         """Remove all installed Python packages using pip."""
@@ -401,13 +402,16 @@ class PythonBuilder:
         pattern = r'numpy==([\d.]+)'
         for s in requirements:
             match = re.search(pattern, s)
+            if match:
+                break
 
         if not match:
             print("ERROR: Failed to find numpy")
             exit(1)
 
         path_to_python = self.python_exe()
-        call_install_dep_args = [path_to_python, "-m", "pip", "install", "cython", "meson-python", "wheel", "setuptools"]
+        # We use --no-build-isolation, we need the python from the system.
+        call_install_dep_args = ["python", "-m", "pip", "install", "cython", "meson-python", "wheel", "setuptools"]
         call_build_numpy_args = [
                                 self.init_script,
                                 "&", 
@@ -446,5 +450,58 @@ class PythonBuilder:
             if file.is_file():
                 shutil.copy(file, wheel_dir)
         
-        self._remove_all_requirements();
+        self._remove_all_requirements()
 
+    def _build_scipy_debug(self, requirements, wheel_dir):
+        print("  build scipy debug using pip: ")
+        
+        pattern = r'scipy==([\d.]+)'
+        for s in requirements:
+            match = re.search(pattern, s)
+            if match:
+                break
+
+        if not match:
+            print("ERROR: Failed to find scipy")
+            exit(1)
+
+        path_to_python = self.python_exe()
+        call_install_dep_args = ["python", "-m", "pip", "install", "numpy", "cython", "meson-python", 
+                                 "pythran", "pybind11", "compilers", "openblas", "pkg-config", "wheel", "setuptools"]
+        call_build_scipy_args = [
+                                self.init_script,
+                                "&", 
+                                path_to_python, 
+                                "-m", "pip", "wheel",
+                                "--no-build-isolation",
+                                "--no-binary=:all:",
+                                "--no-cache-dir",
+                                "--no-deps",
+                                "-wwheelTmp",
+                                "--config-settings=setup-args=-Dbuildtype=debug", 
+                                match.group()
+                                ]
+        try:
+            subprocess.run(
+                args=call_install_dep_args,
+                check=True,
+                capture_output=True,
+            )
+            subprocess.run(
+                args=call_build_scipy_args,
+                check=True,
+                capture_output=True,
+            )
+        except subprocess.CalledProcessError as e:
+            print(f"ERROR: Failed to build numpy debug")
+            print(e.output.decode("utf-8"))
+            if e.stderr:
+                print(e.stderr.decode("utf-8"))
+            exit(1)
+
+        numpyWheelPath = os.path.join(os.getcwd(), "wheelTmp");
+        for file in pathlib.Path(numpyWheelPath).iterdir():
+            if file.is_file():
+                shutil.copy(file, wheel_dir)
+        
+        self._remove_all_requirements()

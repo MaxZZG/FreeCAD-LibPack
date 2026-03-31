@@ -53,9 +53,9 @@ from compile_all import Compiler, BuildMode, libpack_dir, patch_files
 
 path_to_7zip = "C:\\Program Files\\7-Zip\\7z.exe"
 path_to_bison = "C:\\Program Files\\win-flex-bison\\win_bison.exe"
-devel_init_script_x64 = "C:\\Program Files\\Microsoft Visual Studio\\2022\\Community\\VC\\Auxiliary\\Build\\vcvars64.bat"
+devel_init_script_x64 = "C:\\Program Files\\Microsoft Visual Studio\\2022\\Professional\\VC\\Auxiliary\\Build\\vcvars64.bat"
 devel_init_script_arm64 = "C:\\Program Files\\Microsoft Visual Studio\\2022\\Community\\VC\\Auxiliary\\Build\\vcvarsarm64.bat"
-
+devel_init_script_x64_debug = "D:\\Program Files\\Intel\\oneAPI\\setvars.bat"
 
 def remove_readonly(func, path, _) -> None:
     """Remove a read-only file."""
@@ -342,6 +342,8 @@ if __name__ == "__main__":
             compiler.init_script = devel_init_script_arm64
         else:
             compiler.init_script = devel_init_script_x64
+            if mode == BuildMode.DEBUG:
+                compiler.init_script = devel_init_script_x64_debug
         compiler.compile_all()
 
         # Final cleanup: delete extraneous files and remove local path references from the cMake files
